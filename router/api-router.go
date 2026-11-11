@@ -26,6 +26,18 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
+		apiRouter.GET("/docs", controller.GetDocumentationCatalog)
+		apiRouter.GET("/docs/images/:name", controller.GetDocumentationImage)
+		apiRouter.GET("/docs/articles/:slug", controller.GetDocumentationArticle)
+		documentationAdmin := apiRouter.Group("/admin/documentation")
+		documentationAdmin.Use(middleware.AdminAuth(), middleware.DisableCache())
+		{
+			documentationAdmin.GET("", controller.AdminListDocumentation)
+			documentationAdmin.POST("", controller.AdminCreateDocumentation)
+			documentationAdmin.POST("/images", controller.AdminUploadDocumentationImage)
+			documentationAdmin.POST("/:id/:action", controller.AdminChangeDocumentation)
+		}
+
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
@@ -255,6 +267,8 @@ func SetApiRouter(router *gin.Engine) {
 			entitlementAdminRoute.POST("/skus", controller.AdminCreateProductSKU)
 			entitlementAdminRoute.PUT("/skus/:id", controller.AdminUpdateProductSKU)
 			entitlementAdminRoute.DELETE("/skus/:id", controller.AdminDeleteProductSKU)
+			entitlementAdminRoute.GET("/skus/:id/references", controller.AdminGetSKUReferences)
+			entitlementAdminRoute.POST("/skus/:id/restore", controller.AdminRestoreProductSKU)
 			entitlementAdminRoute.GET("/orders", controller.AdminListProductOrders)
 			entitlementAdminRoute.GET("/gift/settings", controller.AdminGetGiftSettings)
 			entitlementAdminRoute.PUT("/gift/settings", controller.AdminSaveGiftSettings)

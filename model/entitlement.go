@@ -229,7 +229,7 @@ func GrantProductSKUEntitlement(userId int, skuId int, operatorId int) (*Entitle
 	var entitlement *Entitlement
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var sku ProductSKU
-		if err := tx.Where("id = ?", skuId).First(&sku).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND deleted_at = 0", skuId).First(&sku).Error; err != nil {
 			return err
 		}
 		var product Product
@@ -349,29 +349,5 @@ func ResumeEntitlement(entitlementId int) error {
 			"state":      state,
 			"updated_at": common.GetTimestamp(),
 		}).Error
-	})
-}
-
-func DeleteProductSKU(skuId int) error {
-	if skuId <= 0 {
-		return errors.New("invalid SKU id")
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var sku ProductSKU
-		if err := lockForUpdate(tx).Where("id = ?", skuId).First(&sku).Error; err != nil {
-			return err
-		}
-		var orderItemCount int64
-		if err := tx.Model(&ProductOrderItem{}).Where(&ProductOrderItem{SKUId: skuId}).Count(&orderItemCount).Error; err != nil {
-			return err
-		}
-		var entitlementCount int64
-		if err := tx.Model(&Entitlement{}).Where(&Entitlement{SKUId: skuId}).Count(&entitlementCount).Error; err != nil {
-			return err
-		}
-		if orderItemCount > 0 || entitlementCount > 0 {
-			return errors.New("SKU has order or entitlement records; archive it instead")
-		}
-		return tx.Delete(&sku).Error
 	})
 }

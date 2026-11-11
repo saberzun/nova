@@ -281,3 +281,9 @@ custom_oauth.name_empty: "供應者名稱不能為空"
 custom_oauth.has_bindings: "無法刪除已有使用者綁定的供應者"
 custom_oauth.binding_not_found: "OAuth 綁定不存在"
 custom_oauth.provider_id_field_invalid: "無法從供應者響應中提取使用者 ID"
+
+# SKU lifecycle
+sku.deleted: "SKU 已刪除，請重新整理列表。"
+sku.not_found: "SKU 不存在。"
+sku.pending_orders: "SKU 仍有關聯的待付款訂單，請先取消或等待訂單逾時。"
+sku.confirm_entitlements: "SKU 仍有關聯權益，請重新整理列表並確認刪除後原權益將繼續保留。"

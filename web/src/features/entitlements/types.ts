@@ -79,6 +79,7 @@ export interface EntitlementType {
 }
 
 export interface ProductSKU {
+  deleted_at?: number;
   id: number;
   code: string;
   product_id: number;
@@ -100,6 +101,13 @@ export interface ProductSKU {
   status: EntityStatus;
   sort_order: number;
   entitlement_type?: EntitlementType;
+}
+
+export interface SKUReferences {
+  orders: number;
+  pending_orders: number;
+  entitlements: number;
+  ongoing_entitlements: number;
 }
 
 export interface Product {

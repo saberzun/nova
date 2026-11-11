@@ -112,7 +112,7 @@ func createProductOrderWithGiftAndHook(userId int, skuId int, quantity int, rech
 	var created ProductOrder
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var sku ProductSKU
-		if err := lockForUpdate(tx).Where("id = ? AND status = ?", skuId, ProductStatusActive).First(&sku).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND status = ? AND deleted_at = 0", skuId, ProductStatusActive).First(&sku).Error; err != nil {
 			return err
 		}
 		var product Product
@@ -297,8 +297,11 @@ func PrepareProductOrderPayment(orderNo string, userId int, paymentProvider stri
 		if order.Status != ProductOrderStatusPending {
 			return fmt.Errorf("order cannot be paid from status %s", order.Status)
 		}
-		if order.ExpiresAt > 0 && order.ExpiresAt <= getDBTimestampTx(tx) {
-			if err := cancelProductOrderTx(tx, &order, "payment timeout"); err != nil {
+		if order.ExpiresAt == 0 {
+			order.ExpiresAt = order.CreatedAt + ProductOrderPaymentTimeout
+		}
+		if order.ExpiresAt <= getDBTimestampTx(tx) {
+			if err := cancelProductOrderTx(tx, &order, "payment timeout", true); err != nil {
 				return err
 			}
 			expired = true
@@ -313,7 +316,7 @@ func PrepareProductOrderPayment(orderNo string, userId int, paymentProvider stri
 		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"payment_provider": paymentProvider,
 			"payment_method":   paymentMethod,
-			"expires_at":       0,
+			"expires_at":       order.ExpiresAt,
 			"updated_at":       common.GetTimestamp(),
 		}).Error; err != nil {
 			return err
@@ -342,7 +345,6 @@ func ResetProductOrderPaymentPreparation(orderNo string, userId int, paymentProv
 		Updates(map[string]interface{}{
 			"payment_provider": "",
 			"payment_method":   "",
-			"expires_at":       GetDBTimestamp() + ProductOrderPaymentTimeout,
 			"status_reason":    strings.TrimSpace(reason),
 			"updated_at":       common.GetTimestamp(),
 		})
@@ -390,9 +392,29 @@ func CompleteProductOrderWithProvider(orderNo string, providerTradeNo string, ex
 	if orderNo == "" {
 		return errors.New("order number is empty")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		return completeProductOrderWithProviderTx(tx, orderNo, providerTradeNo, expectedPaymentProvider, paymentMethod, providerPayload)
+	expired := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		err := completeProductOrderWithProviderTx(tx, orderNo, providerTradeNo, expectedPaymentProvider, paymentMethod, providerPayload)
+		if !errors.Is(err, ErrProductOrderExpired) {
+			return err
+		}
+		var order ProductOrder
+		if err := lockForUpdate(tx).Preload("Items").Where("order_no = ?", orderNo).First(&order).Error; err != nil {
+			return err
+		}
+		if err := cancelProductOrderTx(tx, &order, "payment timeout", true); err != nil {
+			return err
+		}
+		expired = true
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if expired {
+		return ErrProductOrderExpired
+	}
+	return nil
 }
 
 func completeProductOrderWithProviderTx(tx *gorm.DB, orderNo string, providerTradeNo string, expectedPaymentProvider string, paymentMethod string, providerPayload string) error {
@@ -410,6 +432,15 @@ func completeProductOrderWithProviderTx(tx *gorm.DB, orderNo string, providerTra
 		return fmt.Errorf("order cannot be fulfilled from status %s", order.Status)
 	}
 	now := getDBTimestampTx(tx)
+	if order.Status == ProductOrderStatusPending && order.PaymentProvider != PaymentProviderCorporateTransfer {
+		deadline := order.ExpiresAt
+		if deadline == 0 {
+			deadline = order.CreatedAt + ProductOrderPaymentTimeout
+		}
+		if deadline <= now {
+			return ErrProductOrderExpired
+		}
+	}
 	if order.OriginalAmountCents == 0 {
 		order.OriginalAmountCents = order.TotalAmountMinor + order.GiftDiscountCents
 	}
@@ -538,7 +569,7 @@ func restoreProductOrderStockTx(tx *gorm.DB, order *ProductOrder) error {
 	return nil
 }
 
-func cancelProductOrderTx(tx *gorm.DB, order *ProductOrder, reason string) error {
+func cancelProductOrderTx(tx *gorm.DB, order *ProductOrder, reason string, paymentTimedOut bool) error {
 	if order == nil {
 		return errors.New("product order is nil")
 	}
@@ -548,7 +579,15 @@ func cancelProductOrderTx(tx *gorm.DB, order *ProductOrder, reason string) error
 	if order.Status != ProductOrderStatusPending {
 		return fmt.Errorf("order cannot be cancelled from status %s", order.Status)
 	}
-	if order.PaymentProvider != "" {
+	if paymentTimedOut {
+		if order.ExpiresAt == 0 {
+			order.ExpiresAt = order.CreatedAt + ProductOrderPaymentTimeout
+		}
+		if order.ExpiresAt > getDBTimestampTx(tx) {
+			return errors.New("product order payment deadline has not elapsed")
+		}
+	}
+	if order.PaymentProvider != "" && !(paymentTimedOut && order.PaymentProvider == PaymentProviderEpay) {
 		return errors.New("order payment was initiated and must be reconciled before cancellation")
 	}
 	if err := releaseGiftTx(tx, order, reason); err != nil {
@@ -564,6 +603,9 @@ func cancelProductOrderTx(tx *gorm.DB, order *ProductOrder, reason string) error
 		"cancelled_at":   now,
 		"stock_restored": order.StockRestored,
 		"updated_at":     common.GetTimestamp(),
+	}
+	if paymentTimedOut {
+		updates["expires_at"] = order.ExpiresAt
 	}
 	if order.GiftDiscountCents > 0 {
 		updates["gift_status"] = GiftHoldStatusReleased
@@ -585,7 +627,7 @@ func CancelProductOrder(orderNo string, userId int, reason string) error {
 		if err := query.First(&order).Error; err != nil {
 			return err
 		}
-		return cancelProductOrderTx(tx, &order, reason)
+		return cancelProductOrderTx(tx, &order, reason, false)
 	})
 }
 
@@ -655,13 +697,33 @@ func ExpirePendingProductOrders(limit int) (int, error) {
 	var orderNos []string
 	now := GetDBTimestamp()
 	if err := DB.Model(&ProductOrder{}).
-		Where("status = ? AND payment_provider = ? AND expires_at > 0 AND expires_at <= ?", ProductOrderStatusPending, "", now).
+		Where("status = ? AND (payment_provider IN ? OR payment_provider IS NULL) AND ((expires_at > 0 AND expires_at <= ?) OR ((expires_at = 0 OR expires_at IS NULL) AND created_at <= ?))",
+			ProductOrderStatusPending, []string{"", PaymentProviderEpay}, now, now-ProductOrderPaymentTimeout).
 		Order("id asc").Limit(limit).Pluck("order_no", &orderNos).Error; err != nil {
 		return 0, err
 	}
 	expired := 0
 	for _, orderNo := range orderNos {
-		if err := CancelProductOrder(orderNo, 0, "payment timeout"); err != nil {
+		changed := false
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			var order ProductOrder
+			if err := lockForUpdate(tx).Preload("Items").Where("order_no = ?", orderNo).First(&order).Error; err != nil {
+				return err
+			}
+			deadline := order.ExpiresAt
+			if deadline == 0 {
+				deadline = order.CreatedAt + ProductOrderPaymentTimeout
+			}
+			if order.Status != ProductOrderStatusPending || deadline > getDBTimestampTx(tx) ||
+				(order.PaymentProvider != "" && order.PaymentProvider != PaymentProviderEpay) {
+				return nil
+			}
+			if err := cancelProductOrderTx(tx, &order, "payment timeout", true); err != nil {
+				return err
+			}
+			changed = true
+			return nil
+		}); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				continue
 			}
@@ -671,7 +733,9 @@ func ExpirePendingProductOrders(limit int) (int, error) {
 			}
 			return expired, err
 		}
-		expired++
+		if changed {
+			expired++
+		}
 	}
 	return expired, nil
 }

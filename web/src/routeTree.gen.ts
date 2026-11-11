@@ -43,6 +43,7 @@ import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
+import { Route as AuthenticatedDocumentationIndexRouteImport } from './routes/_authenticated/documentation/index'
 import { Route as AuthenticatedEntitlementCenterIndexRouteImport } from './routes/_authenticated/entitlement-center/index'
 import { Route as AuthenticatedEntitlementsIndexRouteImport } from './routes/_authenticated/entitlements/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
@@ -249,6 +250,12 @@ const AuthenticatedDashboardSectionRoute =
   AuthenticatedDashboardSectionRouteImport.update({
     id: '/dashboard/$section',
     path: '/dashboard/$section',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDocumentationIndexRoute =
+  AuthenticatedDocumentationIndexRouteImport.update({
+    id: '/documentation/',
+    path: '/documentation/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedEntitlementCenterIndexRoute =
@@ -495,6 +502,7 @@ export interface FileRoutesByFullPath {
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/documentation/': typeof AuthenticatedDocumentationIndexRoute
   '/entitlement-center/': typeof AuthenticatedEntitlementCenterIndexRoute
   '/entitlements/': typeof AuthenticatedEntitlementsIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -563,6 +571,7 @@ export interface FileRoutesByTo {
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/documentation': typeof AuthenticatedDocumentationIndexRoute
   '/entitlement-center': typeof AuthenticatedEntitlementCenterIndexRoute
   '/entitlements': typeof AuthenticatedEntitlementsIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -635,6 +644,7 @@ export interface FileRoutesById {
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/documentation/': typeof AuthenticatedDocumentationIndexRoute
   '/_authenticated/entitlement-center/': typeof AuthenticatedEntitlementCenterIndexRoute
   '/_authenticated/entitlements/': typeof AuthenticatedEntitlementsIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -706,6 +716,7 @@ export interface FileRouteTypes {
     | '/usage-logs/$section'
     | '/channels/'
     | '/dashboard/'
+    | '/documentation/'
     | '/entitlement-center/'
     | '/entitlements/'
     | '/keys/'
@@ -774,6 +785,7 @@ export interface FileRouteTypes {
     | '/usage-logs/$section'
     | '/channels'
     | '/dashboard'
+    | '/documentation'
     | '/entitlement-center'
     | '/entitlements'
     | '/keys'
@@ -845,6 +857,7 @@ export interface FileRouteTypes {
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
+    | '/_authenticated/documentation/'
     | '/_authenticated/entitlement-center/'
     | '/_authenticated/entitlements/'
     | '/_authenticated/keys/'
@@ -1140,6 +1153,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/$section'
       fullPath: '/dashboard/$section'
       preLoaderRoute: typeof AuthenticatedDashboardSectionRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/documentation/': {
+      id: '/_authenticated/documentation/'
+      path: '/documentation'
+      fullPath: '/documentation/'
+      preLoaderRoute: typeof AuthenticatedDocumentationIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/entitlement-center/': {
@@ -1484,6 +1504,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
+  AuthenticatedDocumentationIndexRoute: typeof AuthenticatedDocumentationIndexRoute
   AuthenticatedEntitlementCenterIndexRoute: typeof AuthenticatedEntitlementCenterIndexRoute
   AuthenticatedEntitlementsIndexRoute: typeof AuthenticatedEntitlementsIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1513,6 +1534,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
+  AuthenticatedDocumentationIndexRoute: AuthenticatedDocumentationIndexRoute,
   AuthenticatedEntitlementCenterIndexRoute:
     AuthenticatedEntitlementCenterIndexRoute,
   AuthenticatedEntitlementsIndexRoute: AuthenticatedEntitlementsIndexRoute,

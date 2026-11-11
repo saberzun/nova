@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
@@ -240,7 +241,11 @@ func AdminListEntitlementTypeChangeLogs(c *gin.Context) {
 
 func AdminListProducts(c *gin.Context) {
 	var products []model.Product
-	if err := model.DB.Preload("SKUs").Order("sort_order desc, id desc").Find(&products).Error; err != nil {
+	query := model.DB.Preload("SKUs", "deleted_at = 0")
+	if c.Query("include_deleted") == "true" {
+		query = model.DB.Preload("SKUs")
+	}
+	if err := query.Order("sort_order desc, id desc").Find(&products).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -407,7 +412,7 @@ func AdminUpdateProductSKU(c *gin.Context) {
 		return
 	}
 	var existing model.ProductSKU
-	if err := model.DB.Where("id = ?", id).First(&existing).Error; err != nil {
+	if err := model.DB.Where("id = ? AND deleted_at = 0", id).First(&existing).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -416,7 +421,7 @@ func AdminUpdateProductSKU(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if err := model.DB.Model(&existing).Updates(map[string]interface{}{
+	result := model.DB.Model(&existing).Where("deleted_at = 0").Updates(map[string]interface{}{
 		"code":                      strings.TrimSpace(sku.Code),
 		"product_id":                sku.ProductId,
 		"entitlement_type_id":       sku.EntitlementTypeId,
@@ -437,8 +442,13 @@ func AdminUpdateProductSKU(c *gin.Context) {
 		"status":                    sku.Status,
 		"sort_order":                sku.SortOrder,
 		"updated_at":                common.GetTimestamp(),
-	}).Error; err != nil {
-		common.ApiError(c, err)
+	})
+	if result.Error != nil {
+		common.ApiError(c, result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
+		common.ApiErrorI18n(c, i18n.MsgSKUDeleted)
 		return
 	}
 	recordManageAudit(c, "entitlement.sku_update", map[string]interface{}{"id": id})
@@ -456,7 +466,15 @@ func AdminDeleteProductSKU(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.DeleteProductSKU(id); err != nil {
+	if err := model.DeleteProductSKUWithConfirmation(id, c.Query("confirm_entitlements") == "true"); err != nil {
+		if errors.Is(err, model.ErrSKUPendingOrders) {
+			common.ApiErrorI18n(c, i18n.MsgSKUPendingOrders)
+			return
+		}
+		if errors.Is(err, model.ErrSKUConfirmationRequired) {
+			common.ApiErrorI18n(c, i18n.MsgSKUConfirmEntitlements)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -464,9 +482,42 @@ func AdminDeleteProductSKU(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+func AdminGetSKUReferences(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var sku model.ProductSKU
+	if id <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgSKUNotFound)
+		return
+	}
+	if err := model.DB.First(&sku, id).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	refs, err := model.GetSKUReferences(model.DB, id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, refs)
+}
+
+func AdminRestoreProductSKU(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := model.RestoreProductSKU(id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "entitlement.sku_restore", map[string]interface{}{"id": id})
+	common.ApiSuccess(c, nil)
+}
+
 func ListStoreProducts(c *gin.Context) {
 	var products []model.Product
-	if err := model.DB.Preload("SKUs", "status = ?", model.ProductStatusActive).
+	if err := model.DB.Preload("SKUs", "status = ? AND deleted_at = 0", model.ProductStatusActive).
 		Preload("SKUs.EntitlementType.Groups").
 		Where("status = ?", model.ProductStatusActive).
 		Order("sort_order desc, id desc").Find(&products).Error; err != nil {

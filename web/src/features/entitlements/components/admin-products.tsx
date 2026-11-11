@@ -34,6 +34,8 @@ import {
   createProductSKU,
   deleteProductSKU,
   getAdminProducts,
+  getSKUReferences,
+  restoreProductSKU,
   getEntitlementTypes,
   updateProduct,
   updateProductSKU,
@@ -45,6 +47,7 @@ import {
   quotaUnitsToUSD,
   usdToQuotaUnits,
 } from "../form-units";
+import { getSKUDeletionDecision } from "../sku-deletion";
 import type { ProductSKU } from "../types";
 import { AdminFormField } from "./admin-form-field";
 
@@ -108,10 +111,22 @@ export function AdminProducts() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [editingSKUId, setEditingSKUId] = useState<number | null>(null);
   const [deletingSKU, setDeletingSKU] = useState<ProductSKU | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const products = useQuery({
-    queryKey: ["entitlement-admin", "products"],
-    queryFn: getAdminProducts,
+    queryKey: ["entitlement-admin", "products", showDeleted],
+    queryFn: () => getAdminProducts(showDeleted),
   });
+  const references = useQuery({
+    queryKey: ["entitlement-admin", "sku-references", deletingSKU?.id],
+    queryFn: () => getSKUReferences(deletingSKU?.id ?? 0),
+    enabled: deletingSKU !== null,
+    staleTime: 0,
+  });
+  const skuReferences =
+    !references.isError && references.data?.success
+      ? references.data.data
+      : undefined;
+  const deletion = getSKUDeletionDecision(skuReferences);
   const types = useQuery({
     queryKey: ["entitlement-admin", "types"],
     queryFn: getEntitlementTypes,
@@ -226,6 +241,18 @@ export function AdminProducts() {
       toast.success(t("SKU deleted"));
     },
     onError: () => toast.error(t("Delete failed")),
+  });
+  const restoreSKU = useMutation({
+    mutationFn: restoreProductSKU,
+    onSuccess: async (response) => {
+      if (!response.success) {
+        toast.error(response.message || t("Restore failed"));
+        return;
+      }
+      await invalidate();
+      toast.success(t("SKU restored as archived. Edit it to publish again."));
+    },
+    onError: () => toast.error(t("Restore failed")),
   });
   const selectedSKUProduct = (products.data?.data ?? []).find(
     (product) => product.id === skuForm.watch("product_id"),
@@ -574,6 +601,13 @@ export function AdminProducts() {
         </Card>
       </div>
 
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={showDeleted}
+          onCheckedChange={(checked) => setShowDeleted(checked === true)}
+        />
+        {t("Show deleted SKUs")}
+      </label>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {(products.data?.data ?? []).map((product) => (
           <Card key={product.id}>
@@ -649,56 +683,72 @@ export function AdminProducts() {
                     </p>
                   ) : null}
                   <div className="mt-2 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setEditingSKUId(sku.id);
-                        skuForm.reset({
-                          product_id: sku.product_id,
-                          entitlement_type_id: sku.entitlement_type_id,
-                          code: sku.code,
-                          name: sku.name,
-                          price_amount: minorUnitsToMajorAmount(
-                            sku.price_amount_minor,
-                          ),
-                          grant_total_quota_usd: quotaUnitsToUSD(
-                            sku.grant_total_quota,
-                            quotaPerUnit,
-                          ),
-                          grant_daily_quota_usd: quotaUnitsToUSD(
-                            sku.grant_daily_quota,
-                            quotaPerUnit,
-                          ),
-                          min_recharge_amount: minorUnitsToMajorAmount(
-                            sku.min_recharge_amount_minor,
-                          ),
-                          max_recharge_amount: minorUnitsToMajorAmount(
-                            sku.max_recharge_amount_minor,
-                          ),
-                          validity_seconds: sku.validity_seconds,
-                          activation_policy: sku.activation_policy,
-                          activation_deadline_seconds:
-                            sku.activation_deadline_seconds,
-                          stock: sku.stock,
-                          stock_limited: sku.stock_limited,
-                          purchase_limit: sku.purchase_limit,
-                          multi_quantity_enabled: sku.multi_quantity_enabled,
-                          status: sku.status,
-                          sort_order: sku.sort_order,
-                        });
-                      }}
-                    >
-                      {t("Edit SKU")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setDeletingSKU(sku)}
-                    >
-                      <Trash2 aria-hidden="true" />
-                      {t("Delete SKU")}
-                    </Button>
+                    {sku.deleted_at ? (
+                      <>
+                        <Badge variant="secondary">{t("Deleted")}</Badge>
+                        <Button
+                          size="sm"
+                          disabled={restoreSKU.isPending}
+                          onClick={() => restoreSKU.mutate(sku.id)}
+                        >
+                          {t("Restore SKU")}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingSKUId(sku.id);
+                            skuForm.reset({
+                              product_id: sku.product_id,
+                              entitlement_type_id: sku.entitlement_type_id,
+                              code: sku.code,
+                              name: sku.name,
+                              price_amount: minorUnitsToMajorAmount(
+                                sku.price_amount_minor,
+                              ),
+                              grant_total_quota_usd: quotaUnitsToUSD(
+                                sku.grant_total_quota,
+                                quotaPerUnit,
+                              ),
+                              grant_daily_quota_usd: quotaUnitsToUSD(
+                                sku.grant_daily_quota,
+                                quotaPerUnit,
+                              ),
+                              min_recharge_amount: minorUnitsToMajorAmount(
+                                sku.min_recharge_amount_minor,
+                              ),
+                              max_recharge_amount: minorUnitsToMajorAmount(
+                                sku.max_recharge_amount_minor,
+                              ),
+                              validity_seconds: sku.validity_seconds,
+                              activation_policy: sku.activation_policy,
+                              activation_deadline_seconds:
+                                sku.activation_deadline_seconds,
+                              stock: sku.stock,
+                              stock_limited: sku.stock_limited,
+                              purchase_limit: sku.purchase_limit,
+                              multi_quantity_enabled:
+                                sku.multi_quantity_enabled,
+                              status: sku.status,
+                              sort_order: sku.sort_order,
+                            });
+                          }}
+                        >
+                          {t("Edit SKU")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeletingSKU(sku)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                          {t("Delete SKU")}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -711,12 +761,70 @@ export function AdminProducts() {
           open
           onOpenChange={(open) => !open && setDeletingSKU(null)}
           title={t("Delete SKU")}
-          desc={t(
-            "Delete SKU {{name}}? SKUs referenced by orders or user subscriptions cannot be deleted and should be archived instead.",
-            { name: deletingSKU.name },
-          )}
+          desc={
+            <div className="space-y-2">
+              <p>{t("Delete SKU {{name}}?", { name: deletingSKU.name })}</p>
+              {skuReferences ? (
+                <>
+                  <p>
+                    {t(
+                      "Linked orders: {{orders}}. Linked entitlements: {{entitlements}}.",
+                      {
+                        orders: skuReferences.orders,
+                        entitlements: skuReferences.entitlements,
+                      },
+                    )}
+                  </p>
+                  {deletion.mode === "blocked" ? (
+                    <p>
+                      {t(
+                        "This SKU has {{count}} pending orders. Cancel them or wait for expiry before deleting.",
+                        { count: skuReferences.pending_orders },
+                      )}
+                    </p>
+                  ) : null}
+                  {deletion.mode === "logical" ? (
+                    <p>
+                      {t(
+                        "The SKU will be removed from the store and default admin list. Historical orders and existing entitlements will be preserved.",
+                      )}
+                    </p>
+                  ) : null}
+                  {deletion.mode === "permanent" ? (
+                    <p>
+                      {t(
+                        "This SKU has no linked records and will be permanently deleted. This cannot be undone.",
+                      )}
+                    </p>
+                  ) : null}
+                  {deletion.confirmEntitlements ? (
+                    <p>
+                      {t(
+                        "{{count}} ongoing entitlements will remain usable under their original rules. Confirm deletion to keep them unchanged.",
+                        { count: skuReferences.ongoing_entitlements },
+                      )}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p>
+                  {references.isPending
+                    ? t("Loading")
+                    : t(
+                        "Unable to load SKU references. Close this dialog and retry.",
+                      )}
+                </p>
+              )}
+            </div>
+          }
           confirmText={t("Delete")}
-          handleConfirm={() => removeSKU.mutate(deletingSKU.id)}
+          handleConfirm={() =>
+            removeSKU.mutate({
+              id: deletingSKU.id,
+              confirmEntitlements: deletion.confirmEntitlements,
+            })
+          }
+          disabled={!deletion.canDelete || references.isFetching}
           isLoading={removeSKU.isPending}
           destructive
         />

@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from "@tanstack/react-router";
 
-import { DocsPage } from '@/features/public-documents'
+import { DocsPage } from "@/features/documentation/public-page";
 
-export const Route = createFileRoute('/docs/')({
+export const Route = createFileRoute("/docs/")({
+  validateSearch: (search: Record<string, unknown>): { article?: string } =>
+    typeof search.article === "string" ? { article: search.article } : {},
   component: DocsPage,
-})
+});

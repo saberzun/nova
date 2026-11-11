@@ -174,6 +174,11 @@ export function useSidebarData(): SidebarData {
             icon: CreditCard,
           },
           {
+            title: t('Documentation management'),
+            url: '/documentation',
+            icon: FileText,
+          },
+          {
             title: t('Product and Entitlement Center'),
             url: '/entitlement-center',
             icon: Boxes,

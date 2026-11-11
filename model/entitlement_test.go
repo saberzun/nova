@@ -185,7 +185,7 @@ func TestGrantProductSKUEntitlementUsesSKUConfiguration(t *testing.T) {
 	assert.EqualValues(t, 3600, entitlement.ExpireAt-entitlement.StartAt)
 }
 
-func TestDeleteProductSKURejectsReferencedSKU(t *testing.T) {
+func TestDeleteProductSKUConfirmsExistingEntitlementsAndPreservesHistory(t *testing.T) {
 	resetEntitlementFixtures(t)
 	entitlementType := seedEntitlementType(t, "delete-sku-sub", EntitlementAssetSubscription)
 	product := Product{Code: "delete-sku-product", Name: "Delete SKU Product", Category: ProductCategorySubscription, Status: ProductStatusActive}
@@ -200,8 +200,80 @@ func TestDeleteProductSKURejectsReferencedSKU(t *testing.T) {
 	require.NoError(t, DB.Create(&Entitlement{UserId: 306, EntitlementTypeId: entitlementType.Id, AssetKind: EntitlementAssetSubscription, ProductId: product.Id, SKUId: referencedSKU.Id, TotalQuota: 1}).Error)
 
 	err := DeleteProductSKU(referencedSKU.Id)
-	require.EqualError(t, err, "SKU has order or entitlement records; archive it instead")
+	require.ErrorIs(t, err, ErrSKUConfirmationRequired)
+	require.NoError(t, DeleteProductSKUWithConfirmation(referencedSKU.Id, true))
 	require.NoError(t, DB.First(&referencedSKU, referencedSKU.Id).Error)
+	assert.Positive(t, referencedSKU.DeletedAt)
+	assert.Equal(t, ProductStatusArchived, referencedSKU.Status)
+	_, err = GrantProductSKUEntitlement(306, referencedSKU.Id, 1)
+	require.Error(t, err)
+	var entitlement Entitlement
+	require.NoError(t, DB.Where(&Entitlement{SKUId: referencedSKU.Id}).First(&entitlement).Error)
+	assert.Equal(t, EntitlementStateActive, entitlement.State)
+	require.NoError(t, RestoreProductSKU(referencedSKU.Id))
+	require.NoError(t, DB.First(&referencedSKU, referencedSKU.Id).Error)
+	assert.Zero(t, referencedSKU.DeletedAt)
+	assert.Equal(t, ProductStatusArchived, referencedSKU.Status)
+}
+
+func TestDeleteProductSKUBlocksPendingOrdersButAllowsCancelledHistory(t *testing.T) {
+	resetEntitlementFixtures(t)
+	typeSub := seedEntitlementType(t, "sku-history", EntitlementAssetSubscription)
+	product := Product{Code: "sku-history", Name: "History", Category: ProductCategorySubscription, Status: ProductStatusActive}
+	require.NoError(t, DB.Create(&product).Error)
+	sku := ProductSKU{Code: "sku-history", ProductId: product.Id, EntitlementTypeId: typeSub.Id, Name: "History", PriceAmountMinor: 100, GrantTotalQuota: 100, ValiditySeconds: 3600, Status: ProductStatusActive}
+	require.NoError(t, DB.Create(&sku).Error)
+	order, err := CreateProductOrder(307, sku.Id, 1, 0)
+	require.NoError(t, err)
+	require.ErrorIs(t, DeleteProductSKUWithConfirmation(sku.Id, true), ErrSKUPendingOrders)
+	require.NoError(t, CancelProductOrder(order.OrderNo, 307, "cancel"))
+	refs, err := GetSKUReferences(DB, sku.Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, refs.Orders)
+	assert.Zero(t, refs.PendingOrders)
+	require.NoError(t, DeleteProductSKU(sku.Id))
+	require.NoError(t, DB.First(&sku, sku.Id).Error)
+	assert.Positive(t, sku.DeletedAt)
+	_, err = CreateProductOrder(307, sku.Id, 1, 0)
+	require.Error(t, err)
+	// A stale update cannot turn a deleted SKU into a purchasable one.
+	require.NoError(t, DB.Model(&sku).Update("status", ProductStatusActive).Error)
+	_, err = CreateProductOrder(307, sku.Id, 1, 0)
+	require.Error(t, err)
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, ProductOrderStatusCancelled, order.Status)
+}
+
+func TestDeleteProductSKUEntitlementStates(t *testing.T) {
+	resetEntitlementFixtures(t)
+	typeSub := seedEntitlementType(t, "sku-states", EntitlementAssetSubscription)
+	product := Product{Code: "sku-states", Name: "States", Category: ProductCategorySubscription, Status: ProductStatusActive}
+	require.NoError(t, DB.Create(&product).Error)
+	for _, test := range []struct {
+		state             string
+		needsConfirmation bool
+	}{
+		{EntitlementStateExpired, false}, {EntitlementStateCancelled, false}, {EntitlementStateDepleted, false},
+		{EntitlementStateActive, true}, {EntitlementStatePaused, true}, {EntitlementStateQueued, true}, {EntitlementStatePending, true},
+	} {
+		t.Run(test.state, func(t *testing.T) {
+			sku := ProductSKU{Code: "sku-" + test.state, Name: test.state, ProductId: product.Id, EntitlementTypeId: typeSub.Id, Status: ProductStatusActive}
+			require.NoError(t, DB.Create(&sku).Error)
+			entitlement := Entitlement{UserId: 308, SKUId: sku.Id, ProductId: product.Id, EntitlementTypeId: typeSub.Id, AssetKind: EntitlementAssetSubscription, State: test.state, TotalQuota: 100}
+			require.NoError(t, DB.Create(&entitlement).Error)
+			err := DeleteProductSKU(sku.Id)
+			if test.needsConfirmation {
+				require.ErrorIs(t, err, ErrSKUConfirmationRequired)
+				require.NoError(t, DeleteProductSKUWithConfirmation(sku.Id, true))
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, DB.First(&sku, sku.Id).Error)
+			assert.Positive(t, sku.DeletedAt)
+			require.NoError(t, DB.First(&entitlement, entitlement.Id).Error)
+			assert.Equal(t, test.state, entitlement.State)
+		})
+	}
 }
 
 func TestEntitlementDailyLimitAndQuantityFulfillment(t *testing.T) {
@@ -394,4 +466,85 @@ func TestInitiatedPaymentRequiresReconciliationBeforeCancellation(t *testing.T) 
 	assert.ErrorContains(t, err, "must be reconciled")
 	require.NoError(t, ResetProductOrderPaymentPreparation(order.OrderNo, 909, PaymentProviderEpay, "confirmed unpaid"))
 	require.NoError(t, CancelProductOrder(order.OrderNo, 909, "confirmed unpaid"))
+}
+
+func TestOnlineProductOrderPaymentDeadline(t *testing.T) {
+	resetEntitlementFixtures(t)
+	typeSub := seedEntitlementType(t, "online-timeout", EntitlementAssetSubscription)
+	product := Product{Code: "online-timeout", Name: "Online Timeout", Category: ProductCategorySubscription, Status: ProductStatusActive}
+	require.NoError(t, DB.Create(&product).Error)
+	sku := ProductSKU{Code: "online-timeout", ProductId: product.Id, EntitlementTypeId: typeSub.Id, Name: "Online Timeout", PriceAmountMinor: 100, GrantTotalQuota: 100, ValiditySeconds: 3600, Stock: 4, Status: ProductStatusActive}
+	require.NoError(t, DB.Create(&sku).Error)
+	order, err := CreateProductOrder(910, sku.Id, 1, 0)
+	require.NoError(t, err)
+	assert.InDelta(t, 7200, order.ExpiresAt-GetDBTimestamp(), 2)
+	prepared, err := PrepareProductOrderPayment(order.OrderNo, 910, PaymentProviderEpay, "alipay")
+	require.NoError(t, err)
+	assert.Equal(t, order.ExpiresAt, prepared.ExpiresAt)
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, prepared.ExpiresAt, order.ExpiresAt)
+	require.NoError(t, ResetProductOrderPaymentPreparation(order.OrderNo, 910, PaymentProviderEpay, "initialization failed"))
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, prepared.ExpiresAt, order.ExpiresAt)
+	_, err = PrepareProductOrderPayment(order.OrderNo, 910, PaymentProviderEpay, "alipay")
+	require.NoError(t, err)
+
+	require.NoError(t, DB.Model(order).Update("expires_at", GetDBTimestamp()-1).Error)
+	count, err := ExpirePendingProductOrders(10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, ProductOrderStatusCancelled, order.Status)
+	assert.Equal(t, PaymentProviderEpay, order.PaymentProvider)
+	require.NoError(t, DB.First(&sku, sku.Id).Error)
+	assert.EqualValues(t, 4, sku.Stock)
+	err = CompleteProductOrderWithProvider(order.OrderNo, "late-paid", PaymentProviderEpay, "alipay", "verified callback")
+	require.Error(t, err)
+	require.NoError(t, MarkProductOrderPaymentException(order.OrderNo, err.Error(), "verified callback"))
+	require.NoError(t, DB.First(order, order.Id).Error)
+	assert.Equal(t, ProductOrderStatusPaymentException, order.Status)
+	var entitlementCount int64
+	require.NoError(t, DB.Model(&Entitlement{}).Where("source_type = ? AND source_id = ?", "order", order.Id).Count(&entitlementCount).Error)
+	assert.Zero(t, entitlementCount)
+
+	// The callback must enforce the deadline even before the periodic task runs.
+	callbackFirst, err := CreateProductOrder(910, sku.Id, 1, 0)
+	require.NoError(t, err)
+	_, err = PrepareProductOrderPayment(callbackFirst.OrderNo, 910, PaymentProviderEpay, "alipay")
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(callbackFirst).Update("expires_at", GetDBTimestamp()-1).Error)
+	require.ErrorIs(t, CompleteProductOrderWithProvider(callbackFirst.OrderNo, "late-before-sweep", PaymentProviderEpay, "alipay", ""), ErrProductOrderExpired)
+	require.NoError(t, DB.First(callbackFirst, callbackFirst.Id).Error)
+	assert.Equal(t, ProductOrderStatusCancelled, callbackFirst.Status)
+
+	// Old initiated orders with a cleared deadline must also time out.
+	legacy, err := CreateProductOrder(910, sku.Id, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(legacy).Updates(map[string]interface{}{"payment_provider": PaymentProviderEpay, "expires_at": 0, "created_at": GetDBTimestamp() - 7201}).Error)
+	count, err = ExpirePendingProductOrders(10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	require.NoError(t, DB.First(legacy, legacy.Id).Error)
+	assert.Equal(t, ProductOrderStatusCancelled, legacy.Status)
+	assert.Equal(t, legacy.CreatedAt+7200, legacy.ExpiresAt)
+	legacyNull, err := CreateProductOrder(910, sku.Id, 1, 0)
+	require.NoError(t, err)
+	require.NoError(t, DB.Model(legacyNull).Updates(map[string]interface{}{"payment_provider": nil, "expires_at": nil, "created_at": GetDBTimestamp() - 7201}).Error)
+	count, err = ExpirePendingProductOrders(10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	require.NoError(t, DB.First(legacyNull, legacyNull.Id).Error)
+	assert.Equal(t, ProductOrderStatusCancelled, legacyNull.Status)
+	assert.Equal(t, legacyNull.CreatedAt+7200, legacyNull.ExpiresAt)
+
+	onTime, err := CreateProductOrder(910, sku.Id, 1, 0)
+	require.NoError(t, err)
+	_, err = PrepareProductOrderPayment(onTime.OrderNo, 910, PaymentProviderEpay, "alipay")
+	require.NoError(t, err)
+	require.NoError(t, CompleteProductOrderWithProvider(onTime.OrderNo, "on-time", PaymentProviderEpay, "alipay", ""))
+	// A repeated successful callback remains idempotent after the deadline.
+	require.NoError(t, DB.Model(onTime).Update("expires_at", GetDBTimestamp()-1).Error)
+	require.NoError(t, CompleteProductOrderWithProvider(onTime.OrderNo, "on-time", PaymentProviderEpay, "alipay", ""))
+	require.NoError(t, DB.Model(&Entitlement{}).Where("source_type = ? AND source_id = ?", "order", onTime.Id).Count(&entitlementCount).Error)
+	assert.EqualValues(t, 1, entitlementCount)
 }

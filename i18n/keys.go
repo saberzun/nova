@@ -1,5 +1,12 @@
 package i18n
 
+const (
+	MsgSKUDeleted             = "sku.deleted"
+	MsgSKUNotFound            = "sku.not_found"
+	MsgSKUPendingOrders       = "sku.pending_orders"
+	MsgSKUConfirmEntitlements = "sku.confirm_entitlements"
+)
+
 // Message keys for i18n translations
 // Use these constants instead of hardcoded strings
 

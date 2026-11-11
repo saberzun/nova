@@ -58,6 +58,7 @@ export function AdminGift() {
       await queryClient.invalidateQueries({
         queryKey: ['entitlement-admin', 'gift-settings'],
       })
+      await queryClient.invalidateQueries({ queryKey: ['gift', 'self'] })
       toast.success(t('Gift settings saved'))
     },
   })

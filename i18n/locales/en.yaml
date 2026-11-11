@@ -280,3 +280,9 @@ custom_oauth.name_empty: "Provider name cannot be empty"
 custom_oauth.has_bindings: "Cannot delete provider with existing user bindings"
 custom_oauth.binding_not_found: "OAuth binding not found"
 custom_oauth.provider_id_field_invalid: "Could not extract user ID from provider response"
+
+# SKU lifecycle
+sku.deleted: "This SKU was deleted. Refresh the list."
+sku.not_found: "SKU not found."
+sku.pending_orders: "This SKU has pending orders. Cancel them or wait for expiry."
+sku.confirm_entitlements: "Existing entitlements require confirmation. Refresh the list and confirm that they will be preserved."

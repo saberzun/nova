@@ -21,6 +21,7 @@ import type {
   Product,
   ProductOrder,
   ProductSKU,
+  SKUReferences,
   TopupInfo,
   UsageCharge,
   UserEntitlementData,
@@ -472,8 +473,14 @@ export async function getTypeChangeLogs(
   return (await api.get(`/api/entitlement/admin/types/${id}/change-logs`)).data;
 }
 
-export async function getAdminProducts(): Promise<ApiResponse<Product[]>> {
-  return (await api.get("/api/entitlement/admin/products")).data;
+export async function getAdminProducts(
+  includeDeleted = false,
+): Promise<ApiResponse<Product[]>> {
+  return (
+    await api.get("/api/entitlement/admin/products", {
+      params: { include_deleted: includeDeleted },
+    })
+  ).data;
 }
 
 export async function createProduct(
@@ -502,8 +509,25 @@ export async function updateProductSKU(
   return (await api.put(`/api/entitlement/admin/skus/${id}`, data)).data;
 }
 
-export async function deleteProductSKU(id: number): Promise<ApiResponse> {
-  return (await api.delete(`/api/entitlement/admin/skus/${id}`)).data;
+export async function deleteProductSKU(input: {
+  id: number;
+  confirmEntitlements: boolean;
+}): Promise<ApiResponse> {
+  return (
+    await api.delete(`/api/entitlement/admin/skus/${input.id}`, {
+      params: { confirm_entitlements: input.confirmEntitlements },
+    })
+  ).data;
+}
+
+export async function getSKUReferences(
+  id: number,
+): Promise<ApiResponse<SKUReferences>> {
+  return (await api.get(`/api/entitlement/admin/skus/${id}/references`)).data;
+}
+
+export async function restoreProductSKU(id: number): Promise<ApiResponse> {
+  return (await api.post(`/api/entitlement/admin/skus/${id}/restore`)).data;
 }
 
 export async function getAdminOrders(params?: {

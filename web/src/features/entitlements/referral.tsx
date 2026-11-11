@@ -29,7 +29,21 @@ const formatCNY = (cents: number) =>
 export function ReferralGiftPage() {
   const { t } = useTranslation()
   const gift = useQuery({ queryKey: ['gift', 'self'], queryFn: getGiftSelf })
-  const data = gift.data?.data
+  const data = gift.data?.success ? gift.data.data : undefined
+  const settings = data?.settings
+  let referralDescription = t(gift.isPending ? 'Loading...' : 'Loading failed')
+  if (settings) {
+    referralDescription = t('Referral rewards are currently disabled')
+    if (settings.referral_enabled) {
+      referralDescription = t(
+        'Earn {{firstRate}}% gift balance on a friend’s first eligible cash payment and {{recurringRate}}% on later eligible payments. Rewards become available after the cooling period.',
+        {
+          firstRate: settings.first_rate_bps / 100,
+          recurringRate: settings.recurring_rate_bps / 100,
+        }
+      )
+    }
+  }
   const referralLink = data?.aff_code
     ? `${window.location.origin}/register?aff=${encodeURIComponent(data.aff_code)}`
     : ''
@@ -48,9 +62,7 @@ export function ReferralGiftPage() {
             </CardHeader>
             <CardContent className='space-y-4'>
               <p className='text-muted-foreground text-sm'>
-                {t(
-                  'Earn 10% gift balance on a friend’s first eligible cash payment and 5% on later eligible payments. Rewards become available after the cooling period.'
-                )}
+                {referralDescription}
               </p>
               <div className='flex gap-2'>
                 <Input value={referralLink} readOnly className='font-mono' />

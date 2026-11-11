@@ -45,7 +45,7 @@ const (
 	ProductOrderStatusCancelled        = "cancelled"
 	ProductOrderStatusRefunded         = "refunded"
 	ProductOrderStatusPaymentException = "payment_exception"
-	ProductOrderPaymentTimeout         = int64(30 * 60)
+	ProductOrderPaymentTimeout         = int64(2 * 60 * 60)
 )
 
 var (
@@ -171,6 +171,7 @@ func (p *Product) BeforeUpdate(_ *gorm.DB) error { p.UpdatedAt = common.GetTimes
 
 type ProductSKU struct {
 	Id                     int              `json:"id"`
+	DeletedAt              int64            `json:"deleted_at" gorm:"bigint;index;not null;default:0"`
 	Code                   string           `json:"code" gorm:"type:varchar(64);uniqueIndex;not null"`
 	ProductId              int              `json:"product_id" gorm:"index;not null"`
 	EntitlementTypeId      int              `json:"entitlement_type_id" gorm:"index;not null"`
@@ -197,6 +198,7 @@ type ProductSKU struct {
 
 func (s *ProductSKU) BeforeCreate(_ *gorm.DB) error {
 	now := common.GetTimestamp()
+	s.DeletedAt = 0
 	s.Code, s.Name = strings.TrimSpace(s.Code), strings.TrimSpace(s.Name)
 	if s.Currency == "" {
 		s.Currency = "CNY"

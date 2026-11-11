@@ -8,6 +8,7 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -384,6 +385,7 @@ function TransferReviewDetail(props: {
   const [adminReply, setAdminReply] = useState('')
   const [adminReplyFiles, setAdminReplyFiles] = useState<File[]>([])
   const [refundReference, setRefundReference] = useState('')
+  const [approvalConfirmOpen, setApprovalConfirmOpen] = useState(false)
   const detail = useQuery({
     queryKey: [
       'corporate-transfer',
@@ -441,16 +443,6 @@ function TransferReviewDetail(props: {
           internalNote
         )
       } else {
-        const summary = t(
-          'Confirm receipt of {{amount}} and grant the locked entitlement? This cannot be undone directly.',
-          {
-            amount: new Intl.NumberFormat(undefined, {
-              style: 'currency',
-              currency: 'CNY',
-            }).format(receiptTotal / 100),
-          }
-        )
-        if (!window.confirm(summary)) return
         response = await approveCorporateTransfer(
           props.application.application_no
         )
@@ -460,6 +452,7 @@ function TransferReviewDetail(props: {
       }
     },
     onSuccess: async () => {
+      setApprovalConfirmOpen(false)
       await refresh()
       toast.success(t('Operation completed'))
     },
@@ -727,13 +720,38 @@ function TransferReviewDetail(props: {
                 mutate.isPending ||
                 data.application.status !== 'under_review'
               }
-              onClick={() => mutate.mutate('approve')}
+              onClick={() => setApprovalConfirmOpen(true)}
             >
               {t('Confirm receipt and fulfill')}
             </Button>
           </div>
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={approvalConfirmOpen}
+        onOpenChange={(open) => {
+          if (mutate.isPending) return
+          setApprovalConfirmOpen(open)
+          if (!open) toast.info(t('Entitlement grant cancelled'))
+        }}
+        title={t('Confirm receipt and fulfill')}
+        desc={t(
+          'Confirm receipt of {{amount}} and grant the locked entitlement? This cannot be undone directly.',
+          {
+            amount: new Intl.NumberFormat(undefined, {
+              style: 'currency',
+              currency: 'CNY',
+            }).format(receiptTotal / 100),
+          }
+        )}
+        confirmText={t('Confirm receipt and fulfill')}
+        isLoading={mutate.isPending}
+        disabled={
+          receiptTotal !== payable ||
+          data.application.status !== 'under_review'
+        }
+        handleConfirm={() => mutate.mutate('approve')}
+      />
       {data.application.status === 'fulfilled' &&
       data.application.order?.status === 'fulfilled' ? (
         <Card>

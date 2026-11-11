@@ -212,7 +212,10 @@ func InitDB() (err error) {
 		}
 		common.SysLog("database migration started")
 		err = migrateDB()
-		return err
+		if err != nil {
+			return err
+		}
+		return EnsureDocumentationDefaults()
 	} else {
 		common.FatalLog(err)
 	}
@@ -314,6 +317,7 @@ func migrateDB() error {
 		&ReferralProfile{},
 		&ReferralRewardEvent{},
 		&LegacyQuotaFreezeSnapshot{},
+		&DocumentationArticle{},
 		&StoreNoticeState{},
 		&StoreNoticeRevision{},
 		&StoreNoticeDismissal{},
@@ -416,6 +420,7 @@ func migrateDBFast() error {
 		{&ReferralProfile{}, "ReferralProfile"},
 		{&ReferralRewardEvent{}, "ReferralRewardEvent"},
 		{&LegacyQuotaFreezeSnapshot{}, "LegacyQuotaFreezeSnapshot"},
+		{&DocumentationArticle{}, "DocumentationArticle"},
 		{&StoreNoticeState{}, "StoreNoticeState"},
 		{&StoreNoticeRevision{}, "StoreNoticeRevision"},
 		{&StoreNoticeDismissal{}, "StoreNoticeDismissal"},
