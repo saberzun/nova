@@ -260,15 +260,17 @@ type InputTokenDetails struct {
 	// prompt_tokens_details.cache_write_tokens (Chat Completions) or
 	// input_tokens_details.cache_write_tokens (Responses). It is billed at the
 	// cache-creation price.
-	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
-	TextTokens       int `json:"text_tokens"`
-	AudioTokens      int `json:"audio_tokens"`
-	ImageTokens      int `json:"image_tokens"`
+	CacheWriteTokens         int `json:"cache_write_tokens,omitempty"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	TextTokens               int `json:"text_tokens"`
+	AudioTokens              int `json:"audio_tokens"`
+	ImageTokens              int `json:"image_tokens"`
 }
 
 // CacheCreationTokensTotal returns the cache-write token count regardless of
 // which field the upstream reported it in: Claude-derived conversions populate
-// CachedCreationTokens while OpenAI reports cache_write_tokens natively. Both
+// CachedCreationTokens; OpenAI-compatible APIs may report cache_write_tokens or
+// cache_creation_input_tokens. All
 // are billed at the cache-creation price; when both are present the larger
 // value wins so the same tokens are never double-counted. Negative upstream
 // values are clamped to zero so they can never lower a charge.
@@ -276,6 +278,9 @@ func (d InputTokenDetails) CacheCreationTokensTotal() int {
 	total := d.CachedCreationTokens
 	if d.CacheWriteTokens > total {
 		total = d.CacheWriteTokens
+	}
+	if d.CacheCreationInputTokens > total {
+		total = d.CacheCreationInputTokens
 	}
 	if total < 0 {
 		return 0

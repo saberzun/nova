@@ -217,3 +217,17 @@ func TestNormalizeCacheCreationSplit(t *testing.T) {
 func ptr[T any](value T) *T {
 	return &value
 }
+
+func TestBuildClaudeUsageFromCompatibleCacheCreationInputTokens(t *testing.T) {
+	usage := buildClaudeUsageFromOpenAIUsage(&dto.Usage{
+		PromptTokens: 100, CompletionTokens: 5,
+		PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 10, CacheCreationInputTokens: 20},
+	})
+	require.NotNil(t, usage)
+	assert.Equal(t, 70, usage.InputTokens)
+	assert.Equal(t, 20, usage.CacheCreationInputTokens)
+	require.NotNil(t, usage.CacheCreation)
+	assert.Equal(t, 20, usage.CacheCreation.Ephemeral5mInputTokens)
+	require.NotNil(t, usage.BillingUsage.OpenAIUsage)
+	assert.Equal(t, 20, usage.BillingUsage.OpenAIUsage.PromptTokensDetails.CacheCreationInputTokens)
+}

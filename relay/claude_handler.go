@@ -60,6 +60,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
+		// This rewrite happens before the provider adaptor, including AWS
+		// and Vertex. Keep the client's conversation binding for all of them.
+		if claudeReq.Thinking != nil {
+			request.Thinking.BlockBinding = claudeReq.Thinking.BlockBinding
+		}
 		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
 		if strings.HasPrefix(request.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-8") {

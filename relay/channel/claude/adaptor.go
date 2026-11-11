@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -26,6 +27,10 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
+	if original, ok := info.Request.(*dto.ClaudeRequest); ok && original.Thinking != nil &&
+		request.Thinking != nil && request.Thinking.Type == "adaptive" && len(request.Thinking.BlockBinding) == 0 {
+		request.Thinking.BlockBinding = original.Thinking.BlockBinding
+	}
 	return request, nil
 }
 
@@ -73,7 +78,7 @@ func shouldAppendClaudeBetaQuery(info *relaycommon.RelayInfo) bool {
 
 func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) {
 	// common headers operation
-	anthropicBeta := c.Request.Header.Get("anthropic-beta")
+	anthropicBeta := strings.Join(c.Request.Header.Values("anthropic-beta"), ",")
 	if anthropicBeta != "" {
 		req.Set("anthropic-beta", anthropicBeta)
 	}

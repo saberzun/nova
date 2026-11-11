@@ -26,8 +26,8 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc1h := float64(0)
 
 	if usage.UsageSemantic == "anthropic" {
-		cc1h = float64(usage.ClaudeCacheCreation1hTokens)
-		cc5m = float64(usage.ClaudeCacheCreation5mTokens)
+		five, hour := NormalizeCacheCreationSplit(usage.PromptTokensDetails.CacheCreationTokensTotal(), usage.ClaudeCacheCreation5mTokens, usage.ClaudeCacheCreation1hTokens)
+		cc5m, cc1h = float64(five), float64(hour)
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)

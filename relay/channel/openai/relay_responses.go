@@ -128,6 +128,7 @@ func legacyResponsesUsage(source *dto.Usage) *dto.Usage {
 	if source.InputTokensDetails != nil {
 		usage.PromptTokensDetails.CachedTokens = source.InputTokensDetails.CachedTokens
 		usage.PromptTokensDetails.CacheWriteTokens = source.InputTokensDetails.CacheWriteTokens
+		usage.PromptTokensDetails.CacheCreationInputTokens = source.InputTokensDetails.CacheCreationInputTokens
 	}
 	return usage
 }
@@ -456,6 +457,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		if responsesResponse.Usage.InputTokensDetails != nil {
 			usage.PromptTokensDetails.CachedTokens = responsesResponse.Usage.InputTokensDetails.CachedTokens
 			usage.PromptTokensDetails.CacheWriteTokens = responsesResponse.Usage.InputTokensDetails.CacheWriteTokens
+			usage.PromptTokensDetails.CacheCreationInputTokens = responsesResponse.Usage.InputTokensDetails.CacheCreationInputTokens
 		}
 	}
 	if info == nil || info.ResponsesUsageInfo == nil || info.ResponsesUsageInfo.BuiltInTools == nil {

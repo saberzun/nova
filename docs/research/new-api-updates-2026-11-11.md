@@ -2,8 +2,21 @@
 
 范围：QuantumNous/new-api main，2026-10-10 至 2026-11-11，共 189 条提交。API 本次读取头部：`579573ac74513736e83842b6ed243c261de16dd4`。
 本地基线：e1c400eae3527e60163632c58485dfa5e94932a1（2026-09-20），含大量定制及未提交修改。检查的是本地现有代码；未逐文件重新比对正式容器。
-本次仅研究与生成清单，无代码修改、数据库修改或部署。
+以下初始评估为合并前状态；第一批实施结果见“第一批移植记录”。本次未修改数据库或部署环境。
 上游已使用 relaykit，本地仍有 dto 等旧布局；建议按行为移植，不整体覆盖。
+
+## 第一批移植记录（2026-11-11）
+
+- 合入前备份：`b76a3c1a24c55ada2e5603ea1ccce0ba6a722773`，已推送并核对远端 `feature/product-entitlement-mvp` 分支。
+- 已按当前代码布局移植：`767a82b876`、`30748c6558`、`77436271f4`、`e2a0c4b16a`、`45fbb149f0`、`94cc3ff090`、`9823ebc7ea`、`1b63c28dcc`。
+- 思考参数：保留 block_binding 和未知字段，多行 beta 头完整转发；模型后缀重建 adaptive thinking 时保留客户端绑定（包括 AWS/Vertex 公用入口）。不主动生成签名或绑定策略，不保证修复已损坏的历史签名。
+- 日志：查询凭据脱敏，OAuth 回调去除整个查询串，实际处理器收到的参数不变。
+- 限流：NOSCRIPT 自动 EVAL 恢复且保留桶计数；配置独立限额的分组按用户及实际分组分别计数，未配置分组继续共享全局限额。
+- 缓存计费：保留显式零普通 token、纯缓存使用仍计费；补齐缓存总量拆分，兼容 cache_creation_input_tokens，多字段取最大值避免重复计费。Responses、Chat、Claude 转换及 compact/image 的 usage 映射同步保留新字段。保留现有权益扣费入口和 nanoUSD 单位。
+- DOMPurify：直接依赖、override 和锁文件同步升级为 3.4.17，依赖许可清单同步更新。
+- 验证：新增回归测试在修改前或旧快照可复现失败；相关 dto/limiter/middleware/relay/service/model 测试通过；文档与权益相关 controller 测试通过；Go build、前端 typecheck、文档测试和生产构建通过。
+- 既有失败：controller 全套存在 `TestResolveGroupSelectionState`、`TestUpdateTokenMasksKeyInResponse` 两项失败，均已在合并前快照复现，本批未修改这些逻辑。
+- 本次未部署 dev 或正式环境。临时 `.scratch/corporate-approval-diagnosis/` 保留在本地，未纳入提交。
 
 ## 优先评估项
 
